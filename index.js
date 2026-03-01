@@ -22,7 +22,8 @@ mongoose.connect(process.env.MONGO_URI)
 const clipSchema = new mongoose.Schema({
   username: String,
   fileName: String,
-  uploadDate: { type: Date, default: Date.now }
+  uploadDate: { type: Date, default: Date.now },
+  likes: { type: Number, default: 0 }
 });
 
 const Clip = mongoose.model("Clip", clipSchema);
@@ -113,9 +114,75 @@ app.get("/api/clips", async (req, res) => {
   res.json(clips);
 });
 
-app.get("/", (req, res) => {
-  res.send("CS2 Highlight Bot is running 🚀");
+app.post("/api/like/:id", async (req, res) => {
+  try {
+    const clip = await Clip.findById(req.params.id);
+    if (!clip) return res.status(404).json({ error: "Not found" });
+
+    clip.likes += 1;
+    await clip.save();
+
+    res.json({ likes: clip.likes });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
 });
+
+/* ================= WEBSITE ================= */
+
+app.get("/", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>CS2 Highlights</title>
+      <style>
+        body { font-family: Arial; background:#111; color:white; text-align:center; }
+        h1 { margin-top:40px; }
+        .clip { margin:40px auto; width:600px; background:#1e1e1e; padding:20px; border-radius:10px; }
+        video { width:100%; border-radius:10px; }
+        button { padding:10px 20px; background:#00ff88; border:none; cursor:pointer; border-radius:5px; margin-top:10px; }
+      </style>
+    </head>
+    <body>
+      <h1>🔥 CS2 Highlights 🔥</h1>
+      <div id="clips"></div>
+
+      <script>
+        async function loadClips() {
+          const res = await fetch('/api/clips');
+          const clips = await res.json();
+          const container = document.getElementById('clips');
+          container.innerHTML = '';
+
+          clips.forEach(clip => {
+            container.innerHTML += \`
+              <div class="clip">
+                <h3>\${clip.username}</h3>
+                <video controls>
+                  <source src="/videos/\${clip.fileName}" type="video/mp4">
+                </video>
+                <p>👍 Likes: <span id="likes-\${clip._id}">\${clip.likes}</span></p>
+                <button onclick="likeClip('\${clip._id}')">Like</button>
+              </div>
+            \`;
+          });
+        }
+
+        async function likeClip(id) {
+          const res = await fetch('/api/like/' + id, { method: 'POST' });
+          const data = await res.json();
+          document.getElementById('likes-' + id).innerText = data.likes;
+        }
+
+        loadClips();
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+/* ================= START SERVER ================= */
 
 app.listen(process.env.PORT || 3000, () => {
   console.log("Webserver running");
