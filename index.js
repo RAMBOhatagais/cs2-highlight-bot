@@ -4,10 +4,8 @@ const express = require("express");
 const mongoose = require("mongoose");
 const axios = require("axios");
 const fs = require("fs");
-const ffmpeg = require("fluent-ffmpeg");
-const ffmpegPath = require("ffmpeg-static");
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+/* ================= EXPRESS ================= */
 
 const app = express();
 app.use(express.json());
@@ -19,7 +17,7 @@ app.use("/videos", express.static("videos"));
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
-  .catch(err => console.log(err));
+  .catch(err => console.log("MongoDB error:", err));
 
 const clipSchema = new mongoose.Schema({
   username: String,
@@ -49,8 +47,9 @@ const commands = [
         .setRequired(true))
 ].map(c => c.toJSON());
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`Bot online: ${client.user.tag}`);
+
   const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
   await rest.put(
     Routes.applicationCommands(client.user.id),
@@ -71,15 +70,26 @@ client.on("interactionCreate", async interaction => {
 
     await interaction.deferReply();
 
-    const fileName = Date.now() + "-" + attachment.name;
-    const filePath = `./videos/${fileName}`;
+    try {
+      const fileName = Date.now() + "-" + attachment.name;
+      const filePath = `./videos/${fileName}`;
 
-    const response = await axios.get(attachment.url, { responseType: "stream" });
-    const writer = fs.createWriteStream(filePath);
-    response.data.pipe(writer);
+      const response = await axios({
+        method: "GET",
+        url: attachment.url,
+        responseType: "stream",
+        timeout: 30000
+      });
 
-    writer.on("finish", async () => {
-      console.log("File downloaded");
+      const writer = fs.createWriteStream(filePath);
+      response.data.pipe(writer);
+
+      await new Promise((resolve, reject) => {
+        writer.on("finish", resolve);
+        writer.on("error", reject);
+      });
+
+      console.log("File downloaded successfully");
 
       await Clip.create({
         username: interaction.user.username,
@@ -87,11 +97,15 @@ client.on("interactionCreate", async interaction => {
       });
 
       await interaction.editReply("✅ Klipp uppladdat!");
-      interaction.channel.send(`@everyone 🎬 Nytt klipp av ${interaction.user.username}!`);
-    });
+      await interaction.channel.send(`@everyone 🎬 Nytt klipp av ${interaction.user.username}!`);
 
+    } catch (error) {
+      console.error("UPLOAD ERROR:", error);
+      await interaction.editReply("❌ Något gick fel vid uppladdningen.");
+    }
   }
 });
+
 /* ================= API ================= */
 
 app.get("/api/clips", async (req, res) => {
