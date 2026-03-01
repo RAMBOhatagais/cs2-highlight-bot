@@ -1,4 +1,5 @@
 require("dotenv").config();
+
 const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
@@ -8,8 +9,14 @@ const { v2: cloudinary } = require("cloudinary");
 const { Client, GatewayIntentBits } = require("discord.js");
 
 const app = express();
+
 app.use(express.json());
 app.use(express.static("public"));
+
+// 🔥 FIX FOR RAILWAY ROOT
+app.get("/", (req, res) => {
+  res.sendFile(__dirname + "/public/index.html");
+});
 
 /* ================= DATABASE ================= */
 
@@ -65,7 +72,7 @@ app.post("/api/register", async (req, res) => {
   const hashed = await bcrypt.hash(password, 10);
 
   try {
-    const user = await User.create({ username, password: hashed });
+    await User.create({ username, password: hashed });
     res.json({ message: "User created" });
   } catch {
     res.status(400).json({ error: "Username already exists" });
@@ -111,9 +118,10 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.post("/api/upload", auth, upload.single("video"), async (req, res) => {
   try {
-    const result = await cloudinary.uploader.upload_stream(
+    const stream = cloudinary.uploader.upload_stream(
       { resource_type: "video", folder: "cs2_highlights" },
       async (error, uploadResult) => {
+
         if (error) return res.status(500).json({ error: "Upload failed" });
 
         await Clip.create({
@@ -122,7 +130,7 @@ app.post("/api/upload", auth, upload.single("video"), async (req, res) => {
           videoUrl: uploadResult.secure_url
         });
 
-        // Discord Notification
+        // Discord notification
         const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
         channel.send(`🎬 Nytt klipp uppladdat av ${req.user.username}!`);
 
@@ -130,9 +138,10 @@ app.post("/api/upload", auth, upload.single("video"), async (req, res) => {
       }
     );
 
-    result.end(req.file.buffer);
+    stream.end(req.file.buffer);
 
-  } catch {
+  } catch (err) {
+    console.log(err);
     res.status(500).json({ error: "Upload error" });
   }
 });
@@ -153,6 +162,7 @@ app.get("/api/profile/:username", async (req, res) => {
 
 app.post("/api/like/:id", auth, async (req, res) => {
   const clip = await Clip.findById(req.params.id);
+  if (!clip) return res.status(404).json({ error: "Not found" });
 
   if (clip.likedBy.includes(req.user.username))
     return res.json({ likes: clip.likes });
