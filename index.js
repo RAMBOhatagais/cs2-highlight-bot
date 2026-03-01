@@ -79,17 +79,19 @@ client.on("interactionCreate", async interaction => {
     response.data.pipe(writer);
 
     writer.on("finish", async () => {
-  console.log("File downloaded");
+      console.log("File downloaded");
 
-  await Clip.create({
-    username: interaction.user.username,
-    fileName
-  });
+      await Clip.create({
+        username: interaction.user.username,
+        fileName
+      });
 
-  await interaction.editReply("✅ Klipp uppladdat!");
-  interaction.channel.send(`@everyone 🎬 Nytt klipp av ${interaction.user.username}!`);
+      await interaction.editReply("✅ Klipp uppladdat!");
+      interaction.channel.send(`@everyone 🎬 Nytt klipp av ${interaction.user.username}!`);
+    });
+
+  }
 });
-
 /* ================= API ================= */
 
 app.get("/api/clips", async (req, res) => {
