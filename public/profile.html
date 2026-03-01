@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Profile</title>
+</head>
+<body style="background:#111;color:white;font-family:Arial;padding:20px;">
+
+<h2>👤 My Profile</h2>
+<div id="myClips"></div>
+
+<script>
+async function loadProfile() {
+  const token = localStorage.getItem("token");
+  if (!token) return alert("Logga in först");
+
+  const decoded = JSON.parse(atob(token.split(".")[1]));
+  const username = decoded.username;
+
+  const res = await fetch("/api/profile/" + username);
+  const clips = await res.json();
+
+  const container = document.getElementById("myClips");
+  container.innerHTML = "";
+
+  clips.forEach(clip => {
+    container.innerHTML += `
+      <div style="margin:20px 0;">
+        <h3>${clip.username}</h3>
+        <video controls width="500">
+          <source src="${clip.videoUrl}" type="video/mp4">
+        </video>
+      </div>
+    `;
+  });
+}
+
+loadProfile();
+</script>
+
+</body>
+</html>
