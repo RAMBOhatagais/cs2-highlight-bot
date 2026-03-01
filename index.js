@@ -3,15 +3,20 @@ const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require
 const express = require("express");
 const mongoose = require("mongoose");
 const axios = require("axios");
-const fs = require("fs");
+const { v2: cloudinary } = require("cloudinary");
+
+/* ================= CLOUDINARY ================= */
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 /* ================= EXPRESS ================= */
 
 const app = express();
 app.use(express.json());
-
-if (!fs.existsSync("./videos")) fs.mkdirSync("./videos");
-app.use("/videos", express.static("videos"));
 
 /* ================= DATABASE ================= */
 
@@ -21,9 +26,10 @@ mongoose.connect(process.env.MONGO_URI)
 
 const clipSchema = new mongoose.Schema({
   username: String,
-  fileName: String,
+  videoUrl: String,
   uploadDate: { type: Date, default: Date.now },
-  likes: { type: Number, default: 0 }
+  likes: { type: Number, default: 0 },
+  likedBy: { type: [String], default: [] }
 });
 
 const Clip = mongoose.model("Clip", clipSchema);
@@ -72,29 +78,15 @@ client.on("interactionCreate", async interaction => {
     await interaction.deferReply();
 
     try {
-      const fileName = Date.now() + "-" + attachment.name;
-      const filePath = `./videos/${fileName}`;
 
-      const response = await axios({
-        method: "GET",
-        url: attachment.url,
-        responseType: "stream",
-        timeout: 30000
+      const uploadResult = await cloudinary.uploader.upload(attachment.url, {
+        resource_type: "video",
+        folder: "cs2_highlights"
       });
-
-      const writer = fs.createWriteStream(filePath);
-      response.data.pipe(writer);
-
-      await new Promise((resolve, reject) => {
-        writer.on("finish", resolve);
-        writer.on("error", reject);
-      });
-
-      console.log("File downloaded successfully");
 
       await Clip.create({
         username: interaction.user.username,
-        fileName
+        videoUrl: uploadResult.secure_url
       });
 
       await interaction.editReply("✅ Klipp uppladdat!");
@@ -110,19 +102,27 @@ client.on("interactionCreate", async interaction => {
 /* ================= API ================= */
 
 app.get("/api/clips", async (req, res) => {
-  const clips = await Clip.find().sort({ uploadDate: -1 });
+  const clips = await Clip.find().sort({ likes: -1 });
   res.json(clips);
 });
 
 app.post("/api/like/:id", async (req, res) => {
   try {
+    const { user } = req.body;
     const clip = await Clip.findById(req.params.id);
+
     if (!clip) return res.status(404).json({ error: "Not found" });
 
+    if (clip.likedBy.includes(user)) {
+      return res.json({ likes: clip.likes });
+    }
+
     clip.likes += 1;
+    clip.likedBy.push(user);
     await clip.save();
 
     res.json({ likes: clip.likes });
+
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
@@ -137,9 +137,8 @@ app.get("/", (req, res) => {
     <head>
       <title>CS2 Highlights</title>
       <style>
-        body { font-family: Arial; background:#111; color:white; text-align:center; }
-        h1 { margin-top:40px; }
-        .clip { margin:40px auto; width:600px; background:#1e1e1e; padding:20px; border-radius:10px; }
+        body { font-family: Arial; background:#111; color:white; text-align:center; margin:0; padding:20px; }
+        .clip { margin:30px auto; max-width:700px; background:#1e1e1e; padding:20px; border-radius:10px; }
         video { width:100%; border-radius:10px; }
         button { padding:10px 20px; background:#00ff88; border:none; cursor:pointer; border-radius:5px; margin-top:10px; }
       </style>
@@ -160,7 +159,7 @@ app.get("/", (req, res) => {
               <div class="clip">
                 <h3>\${clip.username}</h3>
                 <video controls>
-                  <source src="/videos/\${clip.fileName}" type="video/mp4">
+                  <source src="\${clip.videoUrl}" type="video/mp4">
                 </video>
                 <p>👍 Likes: <span id="likes-\${clip._id}">\${clip.likes}</span></p>
                 <button onclick="likeClip('\${clip._id}')">Like</button>
@@ -170,7 +169,18 @@ app.get("/", (req, res) => {
         }
 
         async function likeClip(id) {
-          const res = await fetch('/api/like/' + id, { method: 'POST' });
+          let user = localStorage.getItem("user");
+          if (!user) {
+            user = prompt("Skriv ditt namn:");
+            localStorage.setItem("user", user);
+          }
+
+          const res = await fetch('/api/like/' + id, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user })
+          });
+
           const data = await res.json();
           document.getElementById('likes-' + id).innerText = data.likes;
         }
