@@ -79,25 +79,15 @@ client.on("interactionCreate", async interaction => {
     response.data.pipe(writer);
 
     writer.on("finish", async () => {
+  console.log("File downloaded");
 
-      ffmpeg.ffprobe(filePath, async (err, metadata) => {
-        if (err) return interaction.editReply("Video error");
+  await Clip.create({
+    username: interaction.user.username,
+    fileName
+  });
 
-        if (metadata.format.duration > 120) {
-          fs.unlinkSync(filePath);
-          return interaction.editReply("❌ Max 2 minuter!");
-        }
-
-        await Clip.create({
-          username: interaction.user.username,
-          fileName
-        });
-
-        await interaction.editReply("✅ Klipp uppladdat!");
-        interaction.channel.send(`@everyone 🎬 Nytt klipp av ${interaction.user.username}!`);
-      });
-    });
-  }
+  await interaction.editReply("✅ Klipp uppladdat!");
+  interaction.channel.send(`@everyone 🎬 Nytt klipp av ${interaction.user.username}!`);
 });
 
 /* ================= API ================= */
